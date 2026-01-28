@@ -1,0 +1,25 @@
+* Desafio Proposto
+
+Criar uma solucao com agentes para auxiliar tarefas de SDR
+
+** Planejamento
+
+*** Pesquisa sobre SDR
+**** O que e um SDR
+**** Quais as necessidades de um SDR
+**** Como auxiliar um SDR em suas atividades 
+
+*** Pesquisa sobre criacao de agentes
+**** focar pesquisa em claude code + python
+**** estudar MCP
+
+
+** Referencias
+*** Claude Code
+- [[https://platform.claude.com/docs/en/home][Claude Docs]]
+*** Agents
+- [[https://frontendmasters.com/courses/ai-agents-v2/create-an-agent-tool-call/]]
+- [[https://frontendmasters.com/courses/mcp/introduction/]]
+*** SDR
+- [[https://www.youtube.com/watch?v=gJVkK13t_-I][ If I Started as an SDR in 2026, Here's EXACTLY What I'd Do]]
+- [[https://www.agendor.com.br/blog/significado-sdr/]]
