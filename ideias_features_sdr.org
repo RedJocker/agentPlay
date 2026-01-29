@@ -1,0 +1,7 @@
+** Ambiente
+*** Persona personalizada com razao e/ou portfolio da empresa/projeto
+
+** Acoes
+*** Treino de cold calls
+*** Gerenciamento de leads
+*** extracao de informacao de contatos a partir de textos em linguagem natural
