@@ -1,12 +1,13 @@
+import asyncio
 import os
-from ollama import chat, ChatResponse, Message, Client
-
-host="http://localhost:8080"
-client = Client(host=host)
+from ollama import chat, ChatResponse, Message, AsyncClient
 
 
-# client = Client()
 
+# llm_port=8080
+llm_port=11434
+host="http://localhost:{0}".format(llm_port)
+client = AsyncClient(host=host)
 
 
 def hello_tool(model_name: str) -> str:
@@ -29,19 +30,20 @@ messages= [
 
 tools = [hello_tool]
 
-# model = 'qwen3:4b'
+model = 'qwen3:4b'
 # model = 'qwen3-vl:235b-cloud'   
 # model = 'deepseek-v3.1:671b-cloud'
 # model = 'gpt-oss:120b-cloud'
-model = 'nemotron-3-nano:30b-cloud'
+#model = 'nemotron-3-nano:30b-cloud'
 
-def make_call(model, tools, messages):
+async def make_call(model, tools, messages):
     print("make_call:\n")
-    stream: generator = client.chat(
+    stream: async_generator = await client.chat(
         model=model,
         messages=messages,
         stream=True,
         tools=tools,
+        think=True
     )
     
     thinking: str = ''
@@ -49,7 +51,7 @@ def make_call(model, tools, messages):
     tool_calls = []
     
     chunk: ChatResponse
-    for chunk in stream:
+    async for chunk in stream:
         message : Message = chunk.message
         
         if message.thinking:
@@ -87,7 +89,6 @@ def make_call(model, tools, messages):
             'tool_name': call.function.name,
             'content': result,
         })
-        make_call(model, tools, messages)
+        await make_call(model, tools, messages)
 
-make_call(model, tools, messages)
-
+asyncio.run(make_call(model, tools, messages))

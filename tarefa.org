@@ -19,6 +19,7 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 - [[https://docs.ollama.com/]]
 - [[https://ollama.com/library/qwen3:4b/]]
 - [[https://docs.ollama.com/capabilities/streaming]]
+- [[https://github.com/ollama/ollama-python?tab=readme-ov-file#async-client]]
 
 *** Agents
 - [[https://frontendmasters.com/courses/ai-agents-v2/create-an-agent-tool-call/]]
