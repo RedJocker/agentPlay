@@ -38,6 +38,11 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 *** DDD
 - [[https://www.youtube.com/watch?v=yylJNCz_25Q&list=PLnenY3wke2peRVuAWrcIOemf29p6eQo9m&index=2][yt | 2. Lendo "Domain-Driven Design" - [Parte 1] Colocando o modelo de domínios em ação]]
 
+*** EMACS Agent+MPC
+- [[https://github.com/lizqwerscott/mcp.el][mcp client package]]
+- [[https://github.com/karthink/gptel][llm client package]]
+- [[https://blog.kaorubb.org/en/posts/gpt-mcp-setup/][integration]]
+
 ** TODO
 *** Consume MCP with a custom simple agent 
 **** use FAST_MPC client together with Ollama sdk
@@ -52,3 +57,4 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 *** Consume MCP with an extensible agent
 **** connect mpc server on Goose
 ***** should be able to use tool served by mpc server
+**** connect mpc server on gptel.el
