@@ -13,7 +13,6 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 **** focar pesquisa em ollama + python
 **** estudar MCP
 
-
 ** Referencias
 *** Ollama
 - [[https://docs.ollama.com/]]
@@ -27,24 +26,29 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 - [[https://medium.com/@manavg/agentic-ai-protocols-mcp-a2a-and-acp-ea0200eac18b][agentic ai protocols - (mcp, a2a, acp)]]
 
 *** SDR
-- [[https://www.youtube.com/watch?v=gJVkK13t_-I][If I Started as an SDR in 2026, Here's EXACTLY What I'd Do]]
+- [[https://www.youtube.com/watch?v=gJVkK13t_-I][yt | If I Started as an SDR in 2026, Here's EXACTLY What I'd Do]]
 - [[https://www.agendor.com.br/blog/significado-sdr/]]
 
 *** MCP
 - [[https://fastmcp.wiki/en/getting-started/quickstart][FASTMPC Docs]]
 - [[https://block.github.io/goose/docs/getting-started/using-extensions][Consuming mpc server with Goose]]
 - [[https://block.github.io/goose/docs/getting-started/providers][Goose + Ollama]]
+- [[https://runloop.ai/blog/function-calling-vs-model-context-protocol-mcp][Function-Calling VS MCP]]
 
+*** DDD
+- [[https://www.youtube.com/watch?v=yylJNCz_25Q&list=PLnenY3wke2peRVuAWrcIOemf29p6eQo9m&index=2][yt | 2. Lendo "Domain-Driven Design" - [Parte 1] Colocando o modelo de domínios em ação]]
 
 ** TODO
-*** Hello MCP server
-**** Use FAST_MPC doc examples to build a simple mpc server
-*** Consume MCP with an extensible agent
-**** connect mpc server on Goose
-***** should be able to use tool served by mpc server
 *** Consume MCP with a custom simple agent 
 **** use FAST_MPC client together with Ollama sdk
 ***** start with one shot agent that is able to request use of tool provided by mcp server loaded directly (hardcoded)
 ****** dinamic detection and selection of mcp tools
 ***** next step simple agent loop including suport for tool requests as response
 ****** intermediate tool usage between llm-model and mcp server 
+
+** DONE
+*** Hello MCP server
+**** Use FAST_MPC doc examples to build a simple mpc server
+*** Consume MCP with an extensible agent
+**** connect mpc server on Goose
+***** should be able to use tool served by mpc server

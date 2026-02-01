@@ -4,4 +4,37 @@
 ** Acoes
 *** Treino de cold calls
 *** Gerenciamento de leads
+*** Qualificao de leads
+**** classificao de texto que delega classificao para llm cofigurada para responder com alta preditibilidade e resposta estruturada, talvez se utilizando de subclassificacoes
+***** ex: qualificao(LEAD) =
+    quali_budget(Lead)
+    quali_autoridade(Lead),
+    quali_timing(Lead),
+    quali_profile(Lead).
+***** implementacao em mpc necessitaria usar capacidade 'mpc_sampling'
+****** agentes tem suporte potencialmente restrito, alguns tem outros nao
+***** possivel implementar como uma ferramenta interna de um agente customizado
 *** extracao de informacao de contatos a partir de textos em linguagem natural
+
+** Agente 
+*** possibilitar customizacao total de cada prompt
+**** every token matters, every request matters (prompt-engineering possibility for every parameter for every iteraction)
+***** context-window tend to accumulate and inflate very quickly on a long multi-turn promtp-response cycle
+**** engenhar metodos para favorecer chamadas em batch de ferramentas
+***** human in loop pode pedir para colocar tool request numa fila e perguntar llm se deseja usar outra ferramenta diferente
+***** system-message pode ter instrucao para o llmodelo preferir agrupar chamada de ferramentas
+**** editar/remover respostas de llm para futuras chamadas
+**** editar/remover resposta de ferramenta para futuras chamadas
+**** editar/inclusao de reasoning da llm para futuras chamadas
+**** editar argumentos de chamada de ferramenta
+**** possibilitar chamada manual de ferramenta
+**** inclusao minima de ferramentas
+***** disponibilizacao de ferramentas eh verbosa e essa verbosidade influencia na eficacia e custo do prompt 
+**** sumarizacao localizada
+***** para cada bloco que compoe o contexto possibilitar uma sumarizacao automatizada daquele local com contexto selecionado
+****** chamar api completion com contexto no sufixo
+
+*** MPC
+**** mediar interacao de agentes com apis, databases, sistemas, plataformas
+
+
