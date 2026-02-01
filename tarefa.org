@@ -44,12 +44,8 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 - [[https://blog.kaorubb.org/en/posts/gpt-mcp-setup/][integration]]
 
 ** TODO
-*** Consume MCP with a custom simple agent 
-**** use FAST_MPC client together with Ollama sdk
-***** start with one shot agent that is able to request use of tool provided by mcp server loaded directly (hardcoded)
-****** dinamic detection and selection of mcp tools
-***** next step simple agent loop including suport for tool requests as response
-****** intermediate tool usage between llm-model and mcp server 
+*** agent loop prompting user 
+
 
 ** DONE
 *** Hello MCP server
@@ -58,3 +54,9 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 **** connect mpc server on Goose
 ***** should be able to use tool served by mpc server
 **** connect mpc server on gptel.el
+*** Consume MCP with a custom simple agent 
+**** use FAST_MPC client together with Ollama sdk
+***** start with one shot agent that is able to request use of tool provided by mcp server loaded directly (hardcoded)
+****** dinamic detection and selection of mcp tools
+****** intermediate tool usage between llm-model and mcp server
+****** supports both mcp tool and native tools with batch execution

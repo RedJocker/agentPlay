@@ -2,10 +2,27 @@ import asyncio
 import os
 from ollama import chat, ChatResponse, Message, AsyncClient
 
+from fastmcp import Client as MpcClient
+from fastmcp.client.client import CallToolResult
+from mcp.types import ListToolsResult
 
 
-# llm_port=8080
-llm_port=11434
+def mcp_tool_to_ollama(tool: dict) -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": tool["name"],
+            "description": tool.get("description", ""),
+            "parameters": tool.get(
+                "parameters",
+                {"type": "object", "properties": {}, "required": []},
+            ),
+        },
+    }
+
+
+llm_port=8080
+# llm_port=11434
 host="http://localhost:{0}".format(llm_port)
 client = AsyncClient(host=host)
 
@@ -21,31 +38,21 @@ def hello_tool(model_name: str) -> str:
     """
     return "Hello from hello_tool by " + model_name 
 
-messages= [
-    {
-        'role': 'user',
-        'content': 'Hello, what is your name?',
-    },
-]
 
-tools = [hello_tool]
-
-model = 'qwen3:4b'
-# model = 'qwen3-vl:235b-cloud'   
-# model = 'deepseek-v3.1:671b-cloud'
-# model = 'gpt-oss:120b-cloud'
-#model = 'nemotron-3-nano:30b-cloud'
-
-async def make_call(model, tools, messages):
-    print("make_call:\n")
+async def make_call(model, mcp_client, tools_mcp_obj, messages):
+    native_tools = {
+        'hello_tool': hello_tool
+    }
+    tools = {**native_tools, **tools_mcp_obj}
+    
     stream: async_generator = await client.chat(
         model=model,
         messages=messages,
         stream=True,
-        tools=tools,
+        tools=tools.values(),
         think=True
     )
-    
+
     thinking: str = ''
     content: str = ''
     tool_calls = []
@@ -77,18 +84,53 @@ async def make_call(model, tools, messages):
         'tool_calls': tool_calls,
     })
     
-    result: str = ''
+    
     for call in tool_calls:
-        if call.function.name == 'hello_tool':
-            result = hello_tool(**call.function.arguments)
+        result: str = ''
+        if native_tools.get(call.function.name) != None:
+            result = native_tools[call.function.name](**call.function.arguments)
+        elif tools_mcp_obj.get(call.function.name) != None:
+            call_result = (await mcp_client.call_tool_mcp(call.function.name, call.function.arguments))
+            if call_result.isError:
+                result = f'tool call with name {call.function.name} failed' 
+            else:
+                result = call_result.structuredContent.get('result')
+            
         else:
             result = 'There is no tool named ' + call.function.name
-    if result:
-        messages.append({
-            'role': 'tool',
-            'tool_name': call.function.name,
-            'content': result,
-        })
-        await make_call(model, tools, messages)
+        print(result)
+        if result:
+            messages.append({
+                'role': 'tool',
+                'tool_name': call.function.name,
+                'content': result,
+            })
+    if tool_calls:
+        await make_call(model, mcp_client, tools_mcp_obj, messages)
 
-asyncio.run(make_call(model, tools, messages))
+async def main():
+    client: MpcClient = MpcClient("http://localhost:8081/mcp")
+    model = 'qwen3:4b'
+    # model = 'qwen3-vl:235b-cloud'   
+    # model = 'deepseek-v3.1:671b-cloud'
+    # model = 'gpt-oss:120b-cloud'
+    #model = 'nemotron-3-nano:30b-cloud'
+    messages= [
+        {
+            'role': 'user',
+            'content': 'call both the hello_tool and the greet tool with arg MBR',
+        },
+    ]
+
+    
+    async with client:   
+        tools_result: ListToolsResult = await client.list_tools_mcp()
+        
+        raw_tools = tools_result.model_dump(mode="json")["tools"]
+        tools_mcp_lst = [mcp_tool_to_ollama(t) for t in raw_tools]
+        tools_mpc_obj = {tool['function']['name']: tool for tool in tools_mcp_lst}
+        
+        await make_call(model, client, tools_mpc_obj, messages)
+    
+    
+asyncio.run(main())
