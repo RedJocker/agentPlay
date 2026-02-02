@@ -45,6 +45,7 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 
 ** TODO
 *** agent loop prompting user 
+*** verify capabilities when changing model and update config
 
 
 ** DONE

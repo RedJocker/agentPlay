@@ -30,16 +30,16 @@ from mcp.types import ListToolsResult
 LLM_PORT: int = 8080
 LLM_HOST: str = f"http://localhost:{LLM_PORT}"
 
-# Model to use – you can change this to any model available on your Ollama
-# server.
+# Default model – will be mutable at runtime via /configure menu.
 DEFAULT_MODEL: str = "qwen3:4b"
 
 # ---------------------------------------------------------------------------
 # Native tool definitions
 # ---------------------------------------------------------------------------
 
-def hello_tool(model_name: str) -> str:
-    """Return a friendly greeting that includes the model name.
+def hello_tool(model_name: str = "Llm Assistant") -> str:
+    """Return a friendly greeting that includes the assistent model name, so that
+    the user knows what is the model name
 
     Args:
         model_name: Name of the model that invoked the tool.
@@ -66,33 +66,53 @@ def read_multiline() -> str:
         lines.append(line)
     return "\n".join(lines)
 
+
 def mcp_tool_to_ollama(tool: dict) -> dict:
     """Convert an MCP tool description to the JSON schema expected by Ollama.
-
-    The Ollama client expects each tool to follow the OpenAI‑compatible schema:
-    ```
-    {
-        "type": "function",
-        "function": {
-            "name": "...",
-            "description": "...",
-            "parameters": { ... }
-        }
-    }
-    ```
-    
     """
+
+    parameters: dict = tool.get(
+        "inputSchema",
+        {"type": "object", "properties": {}, "required": []},
+    )
+
     return {
         "type": "function",
         "function": {
             "name": tool["name"],
             "description": tool.get("description", ""),
-            "parameters": tool.get(
-                "parameters",
-                {"type": "object", "properties": {}, "required": []},
-            ),
+            "parameters": parameters,
         },
     }
+
+
+async def configure_model(llm_client: AsyncClient) -> str | None:
+    """Fetch available models from the Ollama client and let the user select one.
+
+    Returns the chosen model name or ``None`` if the selection is invalid or cancelled.
+    """
+    try:
+
+        models_resp = await llm_client.list()
+        models = [m.model for m in models_resp.models]
+    except Exception as e:
+        print(f"Failed to retrieve models: {e}")
+        return None
+
+    if not models:
+        print("No models available.")
+        return None
+
+    print("Available models:")
+    for idx, name in enumerate(models, 1):
+        print(f"  {idx}. {name}")
+    choice = input("Select model number (or press Enter to cancel): ").strip()
+    if not choice:
+        return None
+    if not choice.isdigit() or not (1 <= int(choice) <= len(models)):
+        print("Invalid selection.")
+        return None
+    return models[int(choice) - 1]
 
 # ---------------------------------------------------------------------------
 # Core chat logic
@@ -186,11 +206,14 @@ async def llm_interaction(
 async def main() -> None:
     """Initialise clients, discover tools, and start the chat loop."""
     llm_client = AsyncClient(host=LLM_HOST)
+    current_model: str = DEFAULT_MODEL
     # Initialise the MCP client – this connects to the local MCP server.
     async with MpcClient("http://localhost:8081/mcp") as mcp_client:
+
         # Retrieve the list of tools available via MCP.
         tools_res: ListToolsResult = await mcp_client.list_tools_mcp()
         raw_tools = tools_res.model_dump(mode="json")["tools"]
+
         # Convert each MCP tool description to the Ollama schema.
         ollama_tools = [mcp_tool_to_ollama(t) for t in raw_tools]
         mcp_tool_map: Dict[str, dict] = {t["function"]["name"]: t for t in ollama_tools}
@@ -201,11 +224,23 @@ async def main() -> None:
         while True:
             print("You:")
             user_input = read_multiline()
-            if user_input.strip() == "/bye":
+            cmd = user_input.strip()
+            if cmd == "/bye":
                 print("Goodbye!")
                 break
+            if cmd == "/configure":
+                # Fetch available models and let user select one
+                selected = await configure_model(llm_client)
+                if selected:
+                    current_model = selected
+                    print(f"Model set to: {current_model}")
+                continue
+            if cmd == "/clear":
+                messages = []
+                print("Context cleared:")
+                continue
             messages.append({"role": "user", "content": user_input})
-            await llm_interaction(DEFAULT_MODEL, llm_client, mcp_client, mcp_tool_map, messages)
+            await llm_interaction(current_model, llm_client, mcp_client, mcp_tool_map, messages)
 
 
 # ---------------------------------------------------------------------------
