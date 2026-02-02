@@ -44,7 +44,6 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 - [[https://blog.kaorubb.org/en/posts/gpt-mcp-setup/][integration]]
   
 ** TODO
-*** extract commands to a separate function
 *** abort call
 
 ** DONE
@@ -64,3 +63,5 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 *** config streaming
 *** config thinking
 *** verify capabilities when changing model and update config
+*** extract commands to a separate function
+*** support llm calls with and without streaming
