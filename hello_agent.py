@@ -8,6 +8,10 @@ It is organized into three logical sections:
 3. **Main execution** – orchestration of the client, tool discovery, and the
    recursive chat loop.
 
+**Note:** To run this project with Python 3, activate the virtual environment first:
+```bash
+source .venv/bin/activate
+```
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, AsyncGenerator, Dict, List, Callable
 
-from ollama import AsyncClient, ChatResponse, Message
+from ollama import AsyncClient, ChatResponse, Message, ShowResponse
 
 from fastmcp import Client as MpcClient
 from fastmcp.client.client import CallToolResult
@@ -90,12 +94,52 @@ class AgentContext:
                  native_tools: Dict[str, Callable] = {},
                  messages: List[Dict[str, any]] = [],
                  ):
-        self.llm_client = llm_client
+        self.llm_client: AsyncClient = llm_client
         self.mcp_client = mcp_client
-        self.llm_config = DEFAULT_CONFIG
+        self.llm_config = llm_config
         self.mcp_tools = mcp_tools
         self.native_tools = native_tools
         self.messages = messages
+        self.model_capabilities: List[str] = []
+        # Track which configuration options are supported by the current model
+        self.allowed_config: Dict[str, bool] = {
+            "streaming": True,
+            "thinking": True,
+        }
+
+    def _update_allowed_config(self) -> None:
+        """Update allowed_config based on model_capabilities.
+
+        Ollama model capabilities may include strings like "stream", "think",
+        or more specific names. We map known capability identifiers to the
+        configuration flags used by this script.
+        """
+        # Reset to defaults before applying
+        self.allowed_config["thinking"] = True
+        caps = {c.lower() for c in self.model_capabilities}
+        # Mapping of capability keywords to config flags
+        if "think" not in caps and "thinking" not in caps:
+            self.allowed_config["thinking"] = False
+            # Ensure flag is off if not supported
+            self.llm_config.isThinking = False
+
+    async def load_model_capabilities(self) -> None:
+        """Retrieve model capabilities from Ollama and store them.
+
+        Args:
+            model_name: The name of the model to query.
+        """
+        try:
+            # Ollama's AsyncClient has a `show` method that returns model info.
+            model_name = self.llm_config.model
+            info : ShowResponse = await self.llm_client.show(model=model_name)
+            self.model_capabilities = info.capabilities
+            self._update_allowed_config()
+
+          print(f"{model_name} has capabilites: {self.model_capabilities}") 
+        except Exception as e:
+            print(f"Failed to retrieve capabilities for model '{model_name}': {e}")
+            self.model_capabilities = []
 
     def get_all_tools(self):
         return {**self.native_tools, **self.mcp_tools}
@@ -236,6 +280,8 @@ async def main() -> None:
             native_tools=native_tools
         )
 
+        await agent_context.load_model_capabilities()
+
         while True:
             print("You:")
             user_input: str = read_multiline()
@@ -243,11 +289,59 @@ async def main() -> None:
             if cmd == "/bye":
                 print("Goodbye!")
                 break
-            if cmd == "/config":
-                selected_model = await configure_model(agent_context.llm_client)
-                if selected_model:
-                    agent_context.llm_config.model = selected_model
-                    print(f"Model set to: {agent_context.llm_config.model}")
+            # Configuration commands
+            if cmd.startswith("/config"):
+                parts = cmd.split()
+                # model selection
+                if len(parts) == 1 or parts[1].strip().lower() == 'model':
+                    selected_model = await configure_model(agent_context.llm_client)
+                    if selected_model:
+                        agent_context.llm_config.model = selected_model
+                        # Load capabilities for the new model
+                        await agent_context.load_model_capabilities()
+                        print(f"Model set to: {agent_context.llm_config.model}")
+                    continue
+                # Sub‑commands for toggling flags
+                len_parts = len(parts)
+                if len_parts >= 2:
+                    sub_cmd = parts[1]
+                    if (len_parts >= 3):
+                        value = parts[2].strip().lower()
+                    else:
+                        value = ''
+                    if sub_cmd == "streaming":
+                        error = False
+                        if value in ("on", "off"):
+                            agent_context.llm_config.isStreaming = (value == "on")
+                        elif len_parts == 2:
+                            agent_context.llm_config.isStreaming = not agent_context.llm_config.isStreaming
+                        else:
+                            error = True
+                        if error:
+                            print("Usage: /config streaming [on|off]")
+                        else:
+                            new_value = 'on' if agent_context.llm_config.isStreaming else 'off'
+                            print(f"Streaming set to {new_value}")
+                        continue
+                    elif sub_cmd == "thinking":
+                        error = False
+                        if not agent_context.allowed_config['thinking']:
+                            print(f"{agent_context.llm_config.model} does not have thinking capabilities")
+                            agent_context.llm_config.isThinking = False
+                        elif value in ("on", "off"):
+                            agent_context.llm_config.isThinking = (value == "on")
+                        elif len_parts == 2:
+                            agent_context.llm_config.isThinking = not agent_context.llm_config.isThinking
+                        else:
+                            error = True
+                        if error:
+                            print("Usage: /config thinking [on|off]")
+                        else:
+                            new_value = 'on' if agent_context.llm_config.isThinking else 'off'
+                            print(f"Thinking set to {new_value}")
+                        continue
+                # Fallback: unknown config command
+                print("Unknown /config command. Available: /config [model], /config streaming [on|off], /config thinking [on|off]")
                 continue
             if cmd == "/clear":
                 agent_context.messages = []
