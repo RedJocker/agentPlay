@@ -13,7 +13,7 @@ It is organized into three logical sections:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, List, Callable
 
 from ollama import AsyncClient, ChatResponse, Message
 
@@ -21,21 +21,19 @@ from fastmcp import Client as MpcClient
 from fastmcp.client.client import CallToolResult
 from mcp.types import ListToolsResult
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-# Ollama server configuration – adjust the port if your instance runs on a
-# different port.
 LLM_PORT: int = 8080
 LLM_HOST: str = f"http://localhost:{LLM_PORT}"
 
 # Default model – will be mutable at runtime via /configure menu.
 DEFAULT_MODEL: str = "qwen3:4b"
 
-# ---------------------------------------------------------------------------
-# Native tool definitions
-# ---------------------------------------------------------------------------
+class LlmConfig:
+    def __init__(self, model):
+        self.model = model
+        self.isThinking = True
+        self.isStreaming = True
+
+DEFAULT_CONFIG: LlmConfig = LlmConfig(DEFAULT_MODEL)
 
 def hello_tool(model_name: str = "Llm Assistant") -> str:
     """Return a friendly greeting that includes the assistent model name, so that
@@ -49,9 +47,6 @@ def hello_tool(model_name: str = "Llm Assistant") -> str:
     """
     return f"Hello from hello_tool by {model_name}"
 
-# ---------------------------------------------------------------------------
-# Helper utilities
-# ---------------------------------------------------------------------------
 
 def read_multiline() -> str:
     """Read user input until an empty line (two consecutive newlines) is entered.
@@ -67,7 +62,7 @@ def read_multiline() -> str:
     return "\n".join(lines)
 
 
-def mcp_tool_to_ollama(tool: dict) -> dict:
+def mcp_tool_to_schema(tool: dict) -> dict:
     """Convert an MCP tool description to the JSON schema expected by Ollama.
     """
 
@@ -84,6 +79,40 @@ def mcp_tool_to_ollama(tool: dict) -> dict:
             "parameters": parameters,
         },
     }
+
+
+class AgentContext:
+    def __init__(self,
+                 llm_client: AsyncClient,
+                 mcp_client: McpClient,
+                 llm_config: LlmConfig = DEFAULT_CONFIG,
+                 mcp_tools: Dict[str, dict] = {},
+                 native_tools: Dict[str, Callable] = {},
+                 messages: List[Dict[str, any]] = [],
+                 ):
+        self.llm_client = llm_client
+        self.mcp_client = mcp_client
+        self.llm_config = DEFAULT_CONFIG
+        self.mcp_tools = mcp_tools
+        self.native_tools = native_tools
+        self.messages = messages
+
+    def get_all_tools(self):
+        return {**self.native_tools, **self.mcp_tools}
+
+    async def call_tool(self, fun_name: str, fun_args):
+        if fun_name in self.native_tools:
+            return self.native_tools[fun_name](**fun_args)
+        elif fun_name in self.mcp_tools:
+            # Forward the call to the MCP server.
+            tool_res: CallToolResult = await self.mcp_client.call_tool_mcp(
+                fun_name, fun_args)
+            if tool_res.isError:
+                return f"Tool call {fn_name} failed"
+            else:
+                return tool_res.structuredContent.get("result", "")
+        else:
+            return f"Unknown tool: {fn_name}"
 
 
 async def configure_model(llm_client: AsyncClient) -> str | None:
@@ -114,15 +143,9 @@ async def configure_model(llm_client: AsyncClient) -> str | None:
         return None
     return models[int(choice) - 1]
 
-# ---------------------------------------------------------------------------
-# Core chat logic
-# ---------------------------------------------------------------------------
+
 async def llm_interaction(
-    model: str,
-    llm_client: AsyncClient,
-    mcp_client: MpcClient,
-    mcp_tools: Dict[str, dict],
-    messages: List[Dict[str, Any]],
+    agent_context: AgentContext
 ) -> None:
     """Run a single round of the chat, handling streaming responses.
 
@@ -132,18 +155,15 @@ async def llm_interaction(
     """
     print("Calling llm:")
     # Combine native tools with dynamically discovered MCP tools.
-    native_tools = {"hello_tool": hello_tool}
-    all_tools = {**native_tools, **mcp_tools}
 
-    # ``llm_client.chat`` returns an async generator yielding ``ChatResponse``
-    # objects. We enable ``stream=True`` and ``think=True`` to receive both
-    # thinking and content chunks.
-    stream: AsyncGenerator[ChatResponse, None] = await llm_client.chat(
-        model=model,
-        messages=messages,
-        stream=True,
-        tools=all_tools.values(),
-        think=True,
+    all_tools = agent_context.get_all_tools()
+
+    stream: AsyncGenerator[ChatResponse, None] = await agent_context.llm_client.chat(
+        model = agent_context.llm_config.model,
+        messages = agent_context.messages,
+        stream = agent_context.llm_config.isStreaming,
+        think = agent_context.llm_config.isThinking,
+        tools = all_tools.values()
     )
 
     thinking: str = ""
@@ -166,81 +186,76 @@ async def llm_interaction(
             print("\nTool_Call: ", end="")
             print(msg.tool_calls)
             tool_calls.extend(msg.tool_calls)
-
     print("\n")
 
     # Append the assistant's full reply to the message history.
-    messages.append(
-        {"role": "assistant", "thinking": thinking, "content": content, "tool_calls": tool_calls}
+    agent_context.messages.append(
+        {"role": "assistant",
+         "thinking": thinking,
+         "content": content,
+         "tool_calls": tool_calls}
     )
 
     # Resolve each tool call sequentially.
     for call in tool_calls:
         result: str = ""
-        fn_name = call.function.name
-        fn_args = call.function.arguments or {}
-        if fn_name in native_tools:
-            result = native_tools[fn_name](**fn_args)
-        elif fn_name in mcp_tools:
-            # Forward the call to the MCP server.
-            tool_res: CallToolResult = await mcp_client.call_tool_mcp(fn_name, fn_args)
-            if tool_res.isError:
-                result = f"Tool call {fn_name} failed"
-            else:
-                # The structured content is expected to contain a ``result`` field.
-                result = tool_res.structuredContent.get("result", "")
-        else:
-            result = f"Unknown tool: {fn_name}"
-
+        fun_name = call.function.name
+        fun_args = call.function.arguments or {}
+        result = await agent_context.call_tool(fun_name, fun_args)
         print(result)
         if result:
-            messages.append({"role": "tool", "tool_name": fn_name, "content": result})
+            agent_context.messages.append(
+                {"role": "tool", "tool_name": fun_name, "content": result})
 
     # If any tools were invoked we continue the conversation recursively.
     if tool_calls:
-        await llm_interaction(model, llm_client, mcp_client, mcp_tools, messages)
+        await llm_interaction(agent_context)
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+async def get_mcp_tools(mcp_client) ->Dict[str, dict]:
+    tools_res: ListToolsResult = await mcp_client.list_tools_mcp()
+    raw_tools = tools_res.model_dump(mode="json")["tools"]
+
+    # Convert each MCP tool description to the Ollama schema.
+    ollama_tools = [mcp_tool_to_schema(t) for t in raw_tools]
+    mcp_tool_map: Dict[str, dict] = {t["function"]["name"]: t for t in ollama_tools}
+    return mcp_tool_map
+
+def get_native_tools() ->Dict[str, Callable]:
+    return {"hello_tool": hello_tool}
+
 async def main() -> None:
     """Initialise clients, discover tools, and start the chat loop."""
     llm_client = AsyncClient(host=LLM_HOST)
-    current_model: str = DEFAULT_MODEL
-    # Initialise the MCP client – this connects to the local MCP server.
     async with MpcClient("http://localhost:8081/mcp") as mcp_client:
-
-        # Retrieve the list of tools available via MCP.
-        tools_res: ListToolsResult = await mcp_client.list_tools_mcp()
-        raw_tools = tools_res.model_dump(mode="json")["tools"]
-
-        # Convert each MCP tool description to the Ollama schema.
-        ollama_tools = [mcp_tool_to_ollama(t) for t in raw_tools]
-        mcp_tool_map: Dict[str, dict] = {t["function"]["name"]: t for t in ollama_tools}
-
-        # Conversation history persists across iterations.
-        messages: List[Dict[str, Any]] = []
+        mcp_tools: Dict[str, dict] = await get_mcp_tools(mcp_client)
+        native_tools: Dict[str, Callable] = get_native_tools()
+        agent_context = AgentContext(
+            llm_client,
+            mcp_client,
+            mcp_tools=mcp_tools,
+            native_tools=native_tools
+        )
 
         while True:
             print("You:")
-            user_input = read_multiline()
-            cmd = user_input.strip()
+            user_input: str = read_multiline()
+            cmd: str = user_input.strip()
             if cmd == "/bye":
                 print("Goodbye!")
                 break
-            if cmd == "/configure":
-                # Fetch available models and let user select one
-                selected = await configure_model(llm_client)
-                if selected:
-                    current_model = selected
-                    print(f"Model set to: {current_model}")
+            if cmd == "/config":
+                selected_model = await configure_model(agent_context.llm_client)
+                if selected_model:
+                    agent_context.llm_config.model = selected_model
+                    print(f"Model set to: {agent_context.llm_config.model}")
                 continue
             if cmd == "/clear":
-                messages = []
+                agent_context.messages = []
                 print("Context cleared:")
                 continue
-            messages.append({"role": "user", "content": user_input})
-            await llm_interaction(current_model, llm_client, mcp_client, mcp_tool_map, messages)
+            prompt: str = user_input
+            agent_context.messages.append({"role": "user", "content": prompt})
+            await llm_interaction(agent_context)
 
 
 # ---------------------------------------------------------------------------

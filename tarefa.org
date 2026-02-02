@@ -38,15 +38,14 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 *** DDD
 - [[https://www.youtube.com/watch?v=yylJNCz_25Q&list=PLnenY3wke2peRVuAWrcIOemf29p6eQo9m&index=2][yt | 2. Lendo "Domain-Driven Design" - [Parte 1] Colocando o modelo de domínios em ação]]
 
-*** EMACS Agent+MPC
-- [[https://github.com/lizqwerscott/mcp.el][mcp client package]]
-- [[https://github.com/karthink/gptel][llm client package]]
+*** Emacs (Agent+MCP)
+- [[https://github.com/lizqwerscott/mcp.el][mcp client package (mpc.el)]]
+- [[https://github.com/karthink/gptel][llm client package (gptel.el)]]
 - [[https://blog.kaorubb.org/en/posts/gpt-mcp-setup/][integration]]
-
+  
 ** TODO
-*** agent loop prompting user 
 *** verify capabilities when changing model and update config
-
+*** abort call
 
 ** DONE
 *** Hello MCP server
@@ -61,3 +60,6 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 ****** dinamic detection and selection of mcp tools
 ****** intermediate tool usage between llm-model and mcp server
 ****** supports both mcp tool and native tools with batch execution
+*** agent loop prompting user 
+*** config streaming
+*** config thinking
