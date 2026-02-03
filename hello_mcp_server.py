@@ -1,3 +1,4 @@
+import requests
 from fastmcp import FastMCP
 
 mcp = FastMCP("DocExampleMcpSever")
@@ -7,16 +8,24 @@ def greet(name: str) -> str:
     """greet(name) returns a greeting including name passed as parameter"""
     return f"Hello from MCP Server to {name}!"
 
+@mcp.tool
+def weather(city: str) -> str:
+    """Retrieve weather information for a given city and date using wttr.in.
+    Note: wttr.in provides current weather; the date parameter is currently ignored.
+    """
+    try:
+        response : Response = requests.get(f"https://wttr.in/{city}?format=j2")
+        response.raise_for_status()
+        data = response.json()
+        current_condition = data.get("current_condition", [{}])[0]
+        temp_c = current_condition.get('temp_C', "N\A")
+        desc = ", ".join(
+            [ d.get('value', '')
+              for d in current_condition.get('weatherDesc', {})])
+
+        return f"Weather in {city}: {desc}, {temp_c}°C"
+    except Exception as e:
+        return f"Failed to retrieve weather: {e}"
+
 if __name__ == "__main__":
     mcp.run(transport="http", port=8042)
-
-
-
-
-"""
-{ "jsonrpc": "2.0", "id": 1, "method": ""} 
-{ "jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {"protocolVersion": "2.0", "capabilities": {}, "clientInfo": {"name": "myself", "version": "1.0"}}}
-{ "jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {"name": "greet", "arguments": {}}}
-{ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "greet", "arguments": {"name": "MBR"}}}
-{ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "greet", "arguments": {"name": "MR. YES"}}}
-"""
