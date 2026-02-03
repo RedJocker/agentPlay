@@ -42,9 +42,22 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 - [[https://github.com/lizqwerscott/mcp.el][mcp client package (mpc.el)]]
 - [[https://github.com/karthink/gptel][llm client package (gptel.el)]]
 - [[https://blog.kaorubb.org/en/posts/gpt-mcp-setup/][integration]]
-  
+
+
+** ISSUES
+*** if a signal is sent while executing input() it will not trigger imediatelly
+but it will be triggered at some moment, ussually after call to llm
+likely something related to asyncio loop 
+
+
 ** TODO
-*** abort call
+*** a mcp tool involving api call
+*** a mcp tool involving database operation
+**** can be agent specific like a "memory feature"
+**** can be domain relatated
+*** a native function that calls the llm
+*** think about interesting mcp tools for the specific domain we are dealing
+
 
 ** DONE
 *** Hello MCP server
@@ -65,3 +78,4 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 *** verify capabilities when changing model and update config
 *** extract commands to a separate function
 *** support llm calls with and without streaming
+*** abort call

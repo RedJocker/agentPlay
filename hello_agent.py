@@ -17,6 +17,7 @@ source .venv/bin/activate
 from __future__ import annotations
 
 import asyncio
+import signal
 from typing import Any, AsyncGenerator, Dict, List, Callable
 
 from ollama import AsyncClient, ChatResponse, Message, ShowResponse
@@ -152,7 +153,7 @@ class AgentContext:
             tool_res: CallToolResult = await self.mcp_client.call_tool_mcp(
                 fun_name, fun_args)
             if tool_res.isError:
-                return f"Tool call {fn_name} failed"
+                return f"Tool call {fun_name} failed"
             else:
                 return tool_res.structuredContent.get("result", "")
         else:
@@ -291,8 +292,14 @@ async def consume_command(agent_context: AgentContext, cmd: str) -> bool:
         return True
     return False
 
-async def llm_call(agent_context: AgentContext):
-    print("Calling llm:")
+async def llm_call(
+        agent_context: AgentContext, interrupt_event: asyncio.Event):
+    """Call the LLM, respecting interrupt events.
+
+    If ``interrupt_event`` is set during streaming, the function aborts and
+    raises ``asyncio.CancelledError`` so that the caller can clean up.
+    """
+    print(f"Calling llm (streaming={agent_context.llm_config.isStreaming}):")
     all_tools = agent_context.get_all_tools()
     
     thinking: str = ""
@@ -307,19 +314,21 @@ async def llm_call(agent_context: AgentContext):
             think = agent_context.llm_config.isThinking,
             tools = all_tools.values()
         )
-        
+
         async for chunk in stream:
+            if interrupt_event.is_set():
+                raise asyncio.CancelledError()
             msg: Message = chunk.message
             if msg.thinking:
                 if not thinking:
                     print("Thinking:\n")
-                    print(msg.thinking, end="", flush=True)
-                    thinking += msg.thinking
+                print(msg.thinking, end="", flush=True)
+                thinking += msg.thinking
             elif msg.content:
                 if not content:
                     print("\n\nAnswer:\n")
-                    print(msg.content, end="", flush=True)
-                    content += msg.content
+                print(msg.content, end="", flush=True)
+                content += msg.content
             elif msg.tool_calls:
                 print("\nTool_Call: ", end="")
                 print(msg.tool_calls)
@@ -345,7 +354,7 @@ async def llm_call(agent_context: AgentContext):
             print("\nTool_Call: ", end="")
             print(msg.tool_calls)
             tool_calls.extend(msg.tool_calls)
-        
+
     print("\n")
     return {
         'role': 'assistant',
@@ -354,20 +363,24 @@ async def llm_call(agent_context: AgentContext):
         'tool_calls': tool_calls
     }
 
-async def llm_interaction(agent_context: AgentContext) -> None:
+async def llm_interaction(agent_context: AgentContext, interrupt_event: asyncio.Event) -> None:
     """Run a single round of the chat, handling streaming responses.
 
     The function streams the model's reply, prints thinking/content to the
     console, and processes any tool calls. After handling tool calls it recurses
-    to continue the conversation.
+    to continue the conversation. It respects ``interrupt_event`` so that a
+    user‑initiated cancel (Ctrl‑C) aborts the current interaction and returns to
+    the input loop.
     """
     all_tools = agent_context.get_all_tools()
 
-    llm_response = await llm_call(agent_context)
+    llm_response = await llm_call(agent_context, interrupt_event)
     agent_context.messages.append(llm_response)
 
     # handle tool calling
     for call in llm_response['tool_calls']:
+        if interrupt_event.is_set():
+                raise asyncio.CancelledError()
         result: str = ""
         fun_name = call.function.name
         fun_args = call.function.arguments or {}
@@ -379,10 +392,19 @@ async def llm_interaction(agent_context: AgentContext) -> None:
 
     # If any tools were invoked we call llm again with tool result on context
     if llm_response['tool_calls']:
-        await llm_interaction(agent_context)
+        await llm_interaction(agent_context, interrupt_event)
 
 async def main() -> None:
-    """Initialise clients, discover tools, and start the chat loop."""
+    """Initialise clients, discover tools, and start the chat loop with signal handling."""
+
+    # Event to signal an interrupt
+    interrupt_event = asyncio.Event()
+
+    def signal_handler():
+        # Set the event; the running interaction will notice and cancel
+        interrupt_event.set()
+        print("\n[Interrupted] Cancelling current interaction...")
+
     llm_client = AsyncClient(host=LLM_HOST)
     async with MpcClient("http://localhost:8081/mcp") as mcp_client:
         mcp_tools: Dict[str, dict] = await get_mcp_tools(mcp_client)
@@ -396,9 +418,22 @@ async def main() -> None:
 
         await agent_context.load_model_capabilities()
 
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, signal_handler)
+
         while True:
+            interrupt_event.clear()
             print("You:")
-            user_input: str = read_multiline()
+            try:
+                user_input: str = read_multiline()
+            except KeyboardInterrupt:
+                # If user hits Ctrl-C while typing, just continue the loop
+                print("\n[Interrupted] Input cancelled. Returning to prompt.")
+                continue
+            if interrupt_event.is_set():
+                continue
+
             cmd: str = user_input.strip().lower()
             if cmd == "/bye" or cmd == "/exit" or cmd == "/quit":
                 print("Goodbye!")
@@ -407,7 +442,16 @@ async def main() -> None:
                 continue
             prompt: str = user_input
             agent_context.messages.append({"role": "user", "content": prompt})
-            await llm_interaction(agent_context)
+            # Reset interrupt flag before each interaction
+            interrupt_event.clear()
+            try:
+                await llm_interaction(agent_context, interrupt_event)
+            except asyncio.CancelledError:
+                print("Interaction cancelled by user.")
+                continue
+            except KeyboardInterrupt:
+                print("Interaction cancelled by user (KeyboardInterrupt).")
+                continue
 
 
 # ---------------------------------------------------------------------------
