@@ -36,13 +36,15 @@ Criar uma solucao com agentes para auxiliar tarefas de SDR
 - [[https://runloop.ai/blog/function-calling-vs-model-context-protocol-mcp][Function-Calling VS MCP]]
 
 *** DDD
-- [[https://www.youtube.com/watch?v=yylJNCz_25Q&list=PLnenY3wke2peRVuAWrcIOemf29p6eQo9m&index=2][yt | 2. Lendo "Domain-Driven Design" - [Parte 1] Colocando o modelo de domínios em ação]]
+- [[https://www.youtube.com/watch?v=yylJNCz_25Q&list=PLnenY3wke2peRVuAWrcIOemf29p6eQo9m&index=2][yt | 2. Lendo "Domain-Driven Design" - Parte 1: Colocando o modelo de domínios em ação]]
 
 *** Emacs (Agent+MCP)
 - [[https://github.com/lizqwerscott/mcp.el][mcp client package (mpc.el)]]
 - [[https://github.com/karthink/gptel][llm client package (gptel.el)]]
 - [[https://blog.kaorubb.org/en/posts/gpt-mcp-setup/][integration]]
 
+*** other
+- [[https://www.youtube.com/playlist?list=PLhgFs9q2EVg_rB-XT1zaJ3k9z0KVGrR2h][yt | designing data intensive applications]]
 
 ** ISSUES
 *** if a signal is sent while executing input() it will not trigger imediatelly
