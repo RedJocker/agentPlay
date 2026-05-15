@@ -435,6 +435,90 @@ async def consume_command_config(agent_context: AgentContext, cmd: str) -> bool:
     print("Unknown /config command. Available: /config [model], /config streaming [on|off], /config thinking [on|off], /config connection, /config mcp")
     return True
 
+VALID_ROLES = {"system", "user", "assistant", "tool"}
+
+def validate_conversation(data: Any) -> str | None:
+    """Return an error string if invalid, None if valid."""
+    if not isinstance(data, list):
+        return "expected a JSON array"
+    if not data:
+        return "conversation array is empty"
+    for i, msg in enumerate(data):
+        if not isinstance(msg, dict):
+            return f"message {i} is not an object"
+        if "role" not in msg:
+            return f"message {i} missing 'role' field"
+        if msg["role"] not in VALID_ROLES:
+            return f"message {i} has unknown role '{msg['role']}'"
+    return None
+
+
+def print_message(msg: Dict[str, Any]) -> None:
+    role = msg.get("role", "")
+    if role == "user":
+        print("You:")
+        print(msg.get("content", ""))
+    elif role == "assistant":
+        thinking = msg.get("thinking", "")
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls", [])
+        if thinking:
+            print("Thinking:\n")
+            print(thinking, end="")
+        if content:
+            print("\n\nAnswer:\n")
+            print(content, end="")
+        if tool_calls:
+            print("\nTool_Call: ", end="")
+            print(tool_calls)
+        print()
+    elif role == "tool":
+        tool_name = msg.get("tool_name", "unknown")
+        print(f"Tool result [{tool_name}]: {msg.get('content', '')}")
+    elif role == "system":
+        print(f"[System]: {msg.get('content', '')}")
+
+
+def consume_command_import(agent_context: AgentContext, cmd: str) -> bool:
+    if not cmd.startswith("/import"):
+        return False
+    parts = cmd.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        print("Usage: /import <filepath>")
+        return True
+    filepath = parts[1].strip()
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"Import failed: file not found: {filepath}")
+        return True
+    except json.JSONDecodeError as e:
+        print(f"Import failed: invalid JSON: {e}")
+        return True
+    except Exception as e:
+        print(f"Import failed: {e}")
+        return True
+
+    error = validate_conversation(data)
+    if error:
+        print(f"Import failed: {error}")
+        return True
+
+    for msg in data:
+        if msg.get("role") == "assistant" and "tool_calls" in msg:
+            msg["tool_calls"] = [
+                tc for tc in msg["tool_calls"] if isinstance(tc, dict)
+            ]
+
+    agent_context.messages = data
+    print(f"--- Imported conversation ({len(data)} messages) ---\n")
+    for msg in data:
+        print_message(msg)
+    print("\n--- End of imported conversation ---")
+    return True
+
+
 def consume_command_export(agent_context: AgentContext, cmd: str) -> bool:
     if not cmd.startswith("/export"):
         return False
@@ -444,8 +528,13 @@ def consume_command_export(agent_context: AgentContext, cmd: str) -> bool:
         return True
     filepath = parts[1].strip()
     try:
+        def _json_default(obj):
+            if hasattr(obj, "model_dump"):
+                return obj.model_dump()
+            return str(obj)
+
         with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(agent_context.messages, f, indent=2, default=str)
+            json.dump(agent_context.messages, f, indent=2, default=_json_default)
         print(f"Conversation exported to {filepath} ({len(agent_context.messages)} messages).")
     except Exception as e:
         print(f"Export failed: {e}")
@@ -460,6 +549,8 @@ async def consume_command(agent_context: AgentContext, cmd: str) -> bool:
         print("Context cleared.")
         return True
     if consume_command_export(agent_context, cmd):
+        return True
+    if consume_command_import(agent_context, cmd):
         return True
     return False
 
