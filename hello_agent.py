@@ -17,6 +17,7 @@ source .venv/bin/activate
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 import signal
 from typing import Any, AsyncGenerator, Dict, List, Callable, Optional
@@ -434,12 +435,31 @@ async def consume_command_config(agent_context: AgentContext, cmd: str) -> bool:
     print("Unknown /config command. Available: /config [model], /config streaming [on|off], /config thinking [on|off], /config connection, /config mcp")
     return True
 
+def consume_command_export(agent_context: AgentContext, cmd: str) -> bool:
+    if not cmd.startswith("/export"):
+        return False
+    parts = cmd.split(maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip():
+        print("Usage: /export <filepath>")
+        return True
+    filepath = parts[1].strip()
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(agent_context.messages, f, indent=2, default=str)
+        print(f"Conversation exported to {filepath} ({len(agent_context.messages)} messages).")
+    except Exception as e:
+        print(f"Export failed: {e}")
+    return True
+
+
 async def consume_command(agent_context: AgentContext, cmd: str) -> bool:
     if await consume_command_config(agent_context, cmd):
         return True
     if cmd == "/clear":
         agent_context.messages = []
-        print("Context cleared:")
+        print("Context cleared.")
+        return True
+    if consume_command_export(agent_context, cmd):
         return True
     return False
 
