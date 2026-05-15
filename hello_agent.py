@@ -17,6 +17,7 @@ source .venv/bin/activate
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import shlex
 import signal
@@ -541,16 +542,147 @@ def consume_command_export(agent_context: AgentContext, cmd: str) -> bool:
     return True
 
 
-async def consume_command(agent_context: AgentContext, cmd: str) -> bool:
+def _native_signature(fn: Callable) -> str:
+    parts = []
+    for pname, p in inspect.signature(fn).parameters.items():
+        token = pname
+        if p.annotation is not inspect.Parameter.empty:
+            ann = getattr(p.annotation, "__name__", str(p.annotation))
+            token += f": {ann}"
+        if p.default is not inspect.Parameter.empty:
+            token += f" = {p.default!r}"
+        parts.append(token)
+    return f"({', '.join(parts)})"
+
+
+def _mcp_signature(schema: dict) -> str:
+    parameters = schema.get("function", {}).get("parameters", {})
+    properties = parameters.get("properties", {})
+    required = set(parameters.get("required", []))
+    parts = []
+    for pname, pschema in properties.items():
+        ptype = pschema.get("type", "any")
+        suffix = "" if pname in required else "?"
+        parts.append(f"{pname}: {ptype}{suffix}")
+    return f"({', '.join(parts)})"
+
+
+def consume_command_tools(agent_context: AgentContext, cmd: str) -> bool:
+    if cmd != "/tools":
+        return False
+
+    total = len(agent_context.native_tools) + sum(
+        len(t) for t in agent_context.server_tools.values()
+    )
+    print(f"Available tools ({total} total):\n")
+
+    if agent_context.native_tools:
+        print("Native:")
+        for name, fn in agent_context.native_tools.items():
+            doc = (fn.__doc__ or "").strip().splitlines()[0] if fn.__doc__ else ""
+            sig = _native_signature(fn)
+            print(f"  {name}{sig}" + (f" — {doc}" if doc else ""))
+        print()
+
+    for server, tools in agent_context.server_tools.items():
+        print(f"MCP [{server}]:")
+        for name, schema in tools.items():
+            desc = schema.get("function", {}).get("description", "").strip().splitlines()[0]
+            sig = _mcp_signature(schema)
+            print(f"  {name}{sig}" + (f" — {desc}" if desc else ""))
+        print()
+
+    if total == 0:
+        print("  (none)")
+
+    return True
+
+
+async def consume_command_call(
+    agent_context: AgentContext, cmd: str, original_input: str
+) -> bool:
+    if not cmd.startswith("/call"):
+        return False
+
+    try:
+        parts = shlex.split(original_input)
+    except ValueError as e:
+        print(f"Parse error: {e}")
+        return True
+
+    if len(parts) < 2:
+        print("Usage: /call <toolname> [arg0 arg1 ...]")
+        return True
+
+    tool_name = parts[1]
+    raw_args = parts[2:]
+
+    if tool_name in agent_context.native_tools:
+        fn = agent_context.native_tools[tool_name]
+        sig = inspect.signature(fn)
+        param_items = list(sig.parameters.items())
+        required_params = [n for n, p in param_items if p.default is inspect.Parameter.empty]
+        all_param_names = [n for n, _ in param_items]
+
+        if len(raw_args) < len(required_params) or len(raw_args) > len(all_param_names):
+            req = ", ".join(required_params)
+            opt = [n for n in all_param_names if n not in required_params]
+            if opt:
+                print(f"Error: '{tool_name}' requires ({req}), optional ({', '.join(opt)})")
+            else:
+                print(f"Error: '{tool_name}' expects {len(all_param_names)} arg(s): {', '.join(all_param_names)}")
+            print(f"       Got {len(raw_args)} arg(s)")
+            return True
+
+        fun_args = dict(zip(all_param_names, raw_args))
+
+    elif tool_name in agent_context.tool_to_server:
+        server_url = agent_context.tool_to_server[tool_name]
+        schema = agent_context.server_tools[server_url][tool_name]
+        parameters = schema.get("function", {}).get("parameters", {})
+        properties = parameters.get("properties", {})
+        required = parameters.get("required", [])
+        param_names = list(properties.keys())
+
+        if len(raw_args) < len(required) or len(raw_args) > len(param_names):
+            req = ", ".join(required)
+            opt = [p for p in param_names if p not in required]
+            if opt:
+                print(f"Error: '{tool_name}' requires ({req}), optional ({', '.join(opt)})")
+            else:
+                print(f"Error: '{tool_name}' expects {len(param_names)} arg(s): {', '.join(param_names)}")
+            print(f"       Got {len(raw_args)} arg(s)")
+            return True
+
+        fun_args = dict(zip(param_names, raw_args))
+
+    else:
+        available = ", ".join(agent_context.get_all_tools().keys()) or "(none)"
+        print(f"Error: unknown tool '{tool_name}'. Available tools: {available}")
+        return True
+
+    result = await agent_context.call_tool(tool_name, fun_args)
+    print(f"Tool result [{tool_name}]: {result}")
+    agent_context.messages.append({"role": "tool", "tool_name": tool_name, "content": str(result)})
+    return True
+
+
+async def consume_command(
+    agent_context: AgentContext, cmd: str, original_input: str
+) -> bool:
     if await consume_command_config(agent_context, cmd):
         return True
     if cmd == "/clear":
         agent_context.messages = []
         print("Context cleared.")
         return True
+    if consume_command_tools(agent_context, cmd):
+        return True
     if consume_command_export(agent_context, cmd):
         return True
     if consume_command_import(agent_context, cmd):
+        return True
+    if await consume_command_call(agent_context, cmd, original_input):
         return True
     return False
 
@@ -696,14 +828,14 @@ async def main() -> None:
             continue
         if interrupt_event.is_set():
             continue
-
-        cmd: str = user_input.strip().lower()
+        original_input = user_input.strip()
+        cmd: str = original_input.lower()
         if cmd in ("/bye", "/exit", "/quit"):
             for url in list(agent_context.mcp_servers):
                 await remove_mcp_server(agent_context, url)
             print("Goodbye!")
             break
-        if await consume_command(agent_context, cmd):
+        if await consume_command(agent_context, cmd, original_input):
             continue
         prompt: str = user_input
         agent_context.messages.append({"role": "user", "content": prompt})
